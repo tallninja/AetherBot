@@ -6,14 +6,28 @@ import numpy as np
 from argparse import ArgumentParser
 
 
-CELL_SIZE = 20
+CELL_SIZE = 60
 
 def read_image(img_file_path):
     if not os.path.exists(img_file_path):
         return None
-    img = cv2.imread(img_file_path, cv2.IMREAD_GRAYSCALE)
+    original_img = cv2.imread(img_file_path, cv2.IMREAD_COLOR)
+    original_img = cv2.rotate(original_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    height, width = original_img[:, :, 0].shape
+    original_img = cv2.resize(original_img, (height, height))
+    img = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
     ret, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
-    return img
+    return img, original_img
+
+def find_start_and_finish(img):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_blurred = cv2.blur(img, (3, 3))
+    circles = cv2.HoughCircles(gray_blurred, cv2.HOUGH_GRADIENT, 1, 20,
+                               param1=50, param2=30, minRadius=1,
+                               maxRadius=40)
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+    return circles
 
 def blockify(img, coord):
     size = CELL_SIZE
@@ -29,6 +43,7 @@ def blockify(img, coord):
     right = bool(block[(size // 2), (size - 1)]) * 1
 
     edge = up + down + left + right
+    # print(block)
     return block, edge
 
 
@@ -43,7 +58,9 @@ def solve_maze(bin_img, start, stop, no_cells_height, no_cells_width):
             edge_array[i].append(edge)
 
     edge = edge_array
-    
+   
+    print(len(edge))
+
     # Using backtracking algorithm
 
     shortest_path = []
@@ -56,6 +73,7 @@ def solve_maze(bin_img, start, stop, no_cells_height, no_cells_width):
 
     while True:
         h, w = sp[p][0], sp[p][1]
+        print((h, w))
         if sp[-1] == list(stop):
             break
 
@@ -70,27 +88,28 @@ def solve_maze(bin_img, start, stop, no_cells_height, no_cells_width):
             p = p + 1
             continue
 
-        if edge[h][w]>99:
-            edge[h][w] = edge[h][w]-100
+        if edge[h][w] > 99:
+            edge[h][w] = edge[h][w] - 100
             h = h + 1
             sp.append([h,w])
-            edge[h][w] = edge[h][w]-1000
+            print((h, w))
+            edge[h][w] = edge[h][w] - 1000
             p = p + 1
             continue
 
-        if edge[h][w]>9:
-            edge[h][w] = edge[h][w]-10
+        if edge[h][w] > 9:
+            edge[h][w] = edge[h][w] - 10
             w = w - 1
             sp.append([h,w])
-            edge[h][w] = edge[h][w]-1
+            edge[h][w] = edge[h][w] - 1
             p = p + 1
             continue
 
-        if edge[h][w]==1:
-            edge[h][w] = edge[h][w]-1
+        if edge[h][w] == 1:
+            edge[h][w] = edge[h][w] - 1
             w = w + 1
             sp.append([h,w])
-            edge[h][w] = edge[h][w]-10
+            edge[h][w] = edge[h][w] - 10
             p = p + 1
             continue
 
@@ -135,14 +154,24 @@ def main():
     args = vars(ap.parse_args())
 
     try:
-        img = read_image(args['image'])
+        img, original_img = read_image(args['image'])
         height, width = img.shape
     except Exception as e:
         print('\n[Error] Error reading image')
         exit()
 
+    print(height)
+    print(width)
+
+    circles = find_start_and_finish(original_img)
+
+    for pt in circles[0, :]:
+        a, b, r = pt[0], pt[1], pt[2]
+        cv2.circle(original_img, (a, b), r + 5, (0, 255, 0), 2)
+    
     no_cells_height = height // CELL_SIZE
     no_cells_width = width // CELL_SIZE
+    print(no_cells_height)
     start = (0, 0)
     stop = ((no_cells_height - 1), (no_cells_width - 1))
     solved_img = None
@@ -159,10 +188,10 @@ def main():
 
     except Exception as e:
         print('\n[ERROR] Failed to find shortest path')
-        # print(e.message)
+        print(e.message)
         exit()
 
-    cv2.imshow('Original Maze', img)
+    cv2.imshow('Original Maze', original_img)
     cv2.waitKey(0)
     cv2.imshow('Solved Maze', solved_img)
     cv2.waitKey(0)
